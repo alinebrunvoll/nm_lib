@@ -30,16 +30,21 @@ def deriv_dnw(xx, hh, **kwargs):
         grid point is ill (or missing) calculated.
     """
 
-    nint = len(xx) - 1
-    
-    hp = np.zeros(nint)
+    # Last point is ill calculated
 
-    for i in range(nint):
-        hp[i] = ( hh[i+1] - hh[i] ) \
-              / ( xx[i+1] - xx[i] )
+    # nint = len(hh) 
+    
+    # hp = np.zeros(nint)
+
+    # for i in range(nint - 1):
+    #     hp[i] = ( hh[i+1] - hh[i] ) \
+    #           / ( xx[i+1] - xx[i] )
+
+
+    # np.roll(hh, -1) is the same as hh[i+1]
+    hp = (np.roll(hh, -1) - hh) / (np.roll(xx, -1) - xx)
 
     return hp
-
 
 
 def order_conv(hh, hh2, hh4, **kwargs):
@@ -113,6 +118,12 @@ def step_adv_burgers(
         Right hand side of (u^{n+1}-u^{n})/dt = from burgers eq, i.e., x \frac{\partial u}{\partial x}
     """
 
+    dt = cfl_adv_burger(a, xx) * cfl_cut
+
+    rhs = - a * ddx(xx, hh)
+
+    return dt, rhs
+
 
 def cfl_adv_burger(a, x):
     """
@@ -131,6 +142,10 @@ def cfl_adv_burger(a, x):
     `float`
         min(dx/|a|)
     """
+
+    dx = np.gradient(x)
+
+    return np.min(dx / np.abs(a))
 
 
 def evolv_adv_burgers(
@@ -176,9 +191,34 @@ def evolv_adv_burgers(
     t : `array`
         time 1D array
     unnt : `array`
-        Spatial and time evolution of u^n_j for n = (0,nt), and where j represents
+        Spatial and time evolution of u^n_j for n = (0,nt), and where j represents 
         all the elements of the domain.
     """
+
+    t = np.zeros((nt))
+    unnt = np.zeros((len(xx), nt))
+    unnt[:, 0] = hh
+
+    for i in range(0, nt-1): 
+
+        dt, rhs = step_adv_burgers(xx, unnt[:, i], a=a, cfl_cut=cfl_cut, ddx=ddx)
+
+        # Compute next timestep
+        u_next = unnt[:, i] + rhs * dt 
+        
+        # Fix boundaries
+
+        # if bnd_limits[0] # check for dnw or upw
+        u_next_temp = u_next[bnd_limits[0] : -bnd_limits[1]] # dnw scheme
+
+        unnt[:, i+1] = np.pad(u_next_temp, bnd_limits, bnd_type)
+
+        # Update time
+        t[i+1] = t[i] + dt
+
+    return t, unnt
+
+    
 
 
 def deriv_upw(xx, hh, **kwargs):
