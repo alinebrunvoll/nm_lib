@@ -1,6 +1,3 @@
-# def test_ex_2b():
-#     assert False
-
 import numpy as np
 from nm_lib import nm_lib as nm
 
@@ -73,8 +70,8 @@ def test_ex_2b():
     x0 = -2.6
     xf = 2.6
 
-    nt = 100
-    nx = 10 # 10 gridpoints to make the test fail
+    nt = 1000
+    nx = 100 
     xx = np.linspace(x0, xf, nx) 
 
     a = -1
