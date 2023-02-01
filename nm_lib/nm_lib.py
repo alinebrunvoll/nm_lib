@@ -32,15 +32,6 @@ def deriv_dnw(xx, hh, **kwargs):
 
     # Last point is ill calculated
 
-    # nint = len(hh) 
-    
-    # hp = np.zeros(nint)
-
-    # for i in range(nint - 1):
-    #     hp[i] = ( hh[i+1] - hh[i] ) \
-    #           / ( xx[i+1] - xx[i] )
-
-
     # np.roll(hh, -1) is the same as hh[i+1]
     hp = (np.roll(hh, -1) - hh) / (np.roll(xx, -1) - xx)
 
@@ -206,19 +197,24 @@ def evolv_adv_burgers(
         # Compute next timestep
         u_next = unnt[:, i] + rhs * dt 
         
-        # Fix boundaries
+        # Fix boundaries 
+        if bnd_limits[1] > 0: 
+            u_next_temp = u_next[bnd_limits[0] : -bnd_limits[1]]  # dnw scheme
+        else:
+            u_next_temp = u_next[bnd_limits[0] :] # upw scheme
 
-        # if bnd_limits[0] # check for dnw or upw
-        u_next_temp = u_next[bnd_limits[0] : -bnd_limits[1]] # dnw scheme
+        # XXX Remove this
+        # if bnd_type == 'constant':
+        #     unnt[:, i+1] = np.pad(u_next_temp, bnd_limits, bnd_type, constant_values=[unnt[i+1, -2], unnt[i+1, 1]])
+        # else:
+        #     unnt[:, i+1] = np.pad(u_next_temp, bnd_limits, bnd_type) 
 
-        unnt[:, i+1] = np.pad(u_next_temp, bnd_limits, bnd_type)
+        unnt[:, i+1] = np.pad(u_next_temp, bnd_limits, bnd_type) 
 
         # Update time
         t[i+1] = t[i] + dt
 
     return t, unnt
-
-    
 
 
 def deriv_upw(xx, hh, **kwargs):
@@ -239,6 +235,12 @@ def deriv_upw(xx, hh, **kwargs):
         grid point is ill calculated.
     """
 
+    # Last point is ill calculated
+
+    # np.roll(hh, 1) is the same as hh[i-1]
+    hp = (hh - np.roll(hh, 1)) / (xx - np.roll(xx, 1))
+
+    return hp
 
 def deriv_cent(xx, hh, **kwargs):
     r"""
@@ -258,6 +260,12 @@ def deriv_cent(xx, hh, **kwargs):
         and last grid points are ill calculated.
     """
 
+    # First and last points are ill calculated
+
+    # np.roll(hh, 1) for hh[i-1] and np.roll(hh, -1) for hh[i+1]
+    hp = (np.roll(hh, -1) - np.roll(hh, 1)) / (np.roll(xx, -1) - np.roll(xx, 1))
+
+    return hp
 
 def evolv_uadv_burgers(
     xx,
@@ -304,11 +312,57 @@ def evolv_uadv_burgers(
         all the elements of the domain.
     """
 
+# def step_uadv_burgers(
+#     xx,
+#     hh,
+#     a,
+#     cfl_cut=0.98,
+#     ddx=lambda x, y: deriv_dnw(x, y),
+#     **kwargs
+# ):
+#     r"""
+#     Advance one time-step in time the burger eq for a being u.
+
+#     Requires
+#     --------
+#     cfl_adv_burger
+
+#     Parameters
+#     ----------
+#     xx : `array`
+#         Spatial axis.
+#     hh : `array`
+#         Function that depends on xx.
+#     a : `float`
+#         Advection function over the array xx.
+#     cfl_cut : `float`
+#         Constant value to limit dt from cfl_adv_burger.
+#         By default 0.98.
+#     ddx : `lambda function`
+#         Allows to change the space derivative function.
+#         By default lambda x, y: deriv_dnw(x, y).
+
+#     Returns
+#     -------
+#     dt : `float`
+#         Time step.
+#     rhs : `array`
+#         Right hand side of the equation.
+#     """
+
+#     # Compute the time step
+#     dt = cfl_adv_burger(xx, hh, a=a, cfl_cut=cfl_cut)
+
+#     # Compute the right hand side
+#     rhs = -a * ddx(xx, hh)
+
+#     return dt, rhs
 
 def evolv_Lax_uadv_burgers(
     xx,
     hh,
     nt,
+    u,
     cfl_cut=0.98,
     ddx=lambda x, y: deriv_dnw(x, y),
     bnd_type="wrap",
@@ -329,6 +383,10 @@ def evolv_Lax_uadv_burgers(
         Spatial axis.
     hh : `array`
         Function that depends on xx.
+    nt : `int`
+        Number of time steps.
+    a : `function`
+        Advection function.
     cfl_cut : `array`
         Constant value to limit dt from cfl_adv_burger.
         By default 0.98
@@ -350,6 +408,36 @@ def evolv_Lax_uadv_burgers(
         Spatial and time evolution of u^n_j for n = (0,nt), and where j represents
         all the elements of the domain.
     """
+
+    t = np.zeros((nt))
+    unnt = np.zeros((len(xx), nt))
+    unnt[:, 0] = hh
+
+    a=u(xx)
+    a = 1
+
+    for i in range(0, nt-1): 
+
+        dt, rhs = step_uadv_burgers(xx, unnt[:, i], cfl_cut=cfl_cut, ddx=ddx)
+        rhs = 0.5 * (unnt[:, i+1] + unnt[:, i-1]) - rhs
+
+        # Compute next timestep
+        u_next = unnt[:, i] + rhs * dt 
+        
+        # Fix boundaries 
+        if bnd_limits[1] > 0: 
+            u_next_temp = u_next[bnd_limits[0] : -bnd_limits[1]]  # dnw scheme
+        else:
+            u_next_temp = u_next[bnd_limits[0] :] # upw scheme
+
+        unnt[:, i+1] = np.pad(u_next_temp, bnd_limits, bnd_type) 
+
+        # Update time
+        t[i+1] = t[i] + dt
+
+    return t, unnt
+
+
 
 
 def evolv_Lax_adv_burgers(
@@ -435,6 +523,16 @@ def step_uadv_burgers(xx, hh, cfl_cut=0.98, ddx=lambda x, y: deriv_dnw(x, y), **
         right hand side of (u^{n+1}-u^{n})/dt = from burgers eq, i.e., x \frac{\partial u}{\partial x}
     """
 
+    a = hh
+
+    # Compute the time step
+    dt = cfl_diff_burger(a, xx)
+
+    # Compute the right hand side
+    rhs = -a * ddx(xx, hh)
+
+    return dt, rhs
+
 
 def cfl_diff_burger(a, x):
     r"""
@@ -453,6 +551,10 @@ def cfl_diff_burger(a, x):
     `float`
         min(dx/|a|)
     """
+
+    dx = np.diff(x)
+    return np.min(dx / np.abs(a))
+
 
 
 def ops_Lax_LL_Add(
