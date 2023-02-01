@@ -312,63 +312,42 @@ def evolv_uadv_burgers(
         all the elements of the domain.
     """
 
-# def step_uadv_burgers(
-#     xx,
-#     hh,
-#     a,
-#     cfl_cut=0.98,
-#     ddx=lambda x, y: deriv_dnw(x, y),
-#     **kwargs
-# ):
-#     r"""
-#     Advance one time-step in time the burger eq for a being u.
+    t = np.zeros((nt))
+    unnt = np.zeros((len(xx), nt))
+    unnt[:, 0] = hh
 
-#     Requires
-#     --------
-#     cfl_adv_burger
+    for i in range(0, nt-1): 
 
-#     Parameters
-#     ----------
-#     xx : `array`
-#         Spatial axis.
-#     hh : `array`
-#         Function that depends on xx.
-#     a : `float`
-#         Advection function over the array xx.
-#     cfl_cut : `float`
-#         Constant value to limit dt from cfl_adv_burger.
-#         By default 0.98.
-#     ddx : `lambda function`
-#         Allows to change the space derivative function.
-#         By default lambda x, y: deriv_dnw(x, y).
+        dt, rhs = step_uadv_burgers(xx, unnt[:, i], cfl_cut=cfl_cut, ddx=ddx)
 
-#     Returns
-#     -------
-#     dt : `float`
-#         Time step.
-#     rhs : `array`
-#         Right hand side of the equation.
-#     """
+        # Compute next timestep
+        u_next = unnt[:, i] + rhs * dt 
+        
+        # Fix boundaries 
+        if bnd_limits[1] > 0: 
+            u_next_temp = u_next[bnd_limits[0] : -bnd_limits[1]]  # dnw scheme
+        else:
+            u_next_temp = u_next[bnd_limits[0] :] # upw scheme
 
-#     # Compute the time step
-#     dt = cfl_adv_burger(xx, hh, a=a, cfl_cut=cfl_cut)
+        unnt[:, i+1] = np.pad(u_next_temp, bnd_limits, bnd_type) 
 
-#     # Compute the right hand side
-#     rhs = -a * ddx(xx, hh)
+        # Update time
+        t[i+1] = t[i] + dt
 
-#     return dt, rhs
+    return t, unnt 
+
 
 def evolv_Lax_uadv_burgers(
-    xx,
-    hh,
-    nt,
-    u,
-    cfl_cut=0.98,
-    ddx=lambda x, y: deriv_dnw(x, y),
-    bnd_type="wrap",
-    bnd_limits=[0, 1],
+    xx: np.ndarray,
+    hh: np.ndarray,
+    nt: int,
+    u: np.ndarray,
+    cfl_cut: float = 0.98,
+    ddx = lambda x, y: deriv_dnw(x, y),
+    bnd_type: str = "wrap",
+    bnd_limits: tuple = [0, 1],
     **kwargs
-):
+) -> tuple:
     r"""
     Advance nt time-steps in time the burger eq for a being u using the Lax
     method.
@@ -385,8 +364,8 @@ def evolv_Lax_uadv_burgers(
         Function that depends on xx.
     nt : `int`
         Number of time steps.
-    a : `function`
-        Advection function.
+    u : `array`
+        Initial advection function over xx.
     cfl_cut : `array`
         Constant value to limit dt from cfl_adv_burger.
         By default 0.98
@@ -413,8 +392,7 @@ def evolv_Lax_uadv_burgers(
     unnt = np.zeros((len(xx), nt))
     unnt[:, 0] = hh
 
-    a=u(xx)
-    a = 1
+    a=u
 
     for i in range(0, nt-1): 
 
@@ -436,9 +414,6 @@ def evolv_Lax_uadv_burgers(
         t[i+1] = t[i] + dt
 
     return t, unnt
-
-
-
 
 def evolv_Lax_adv_burgers(
     xx,
@@ -526,7 +501,7 @@ def step_uadv_burgers(xx, hh, cfl_cut=0.98, ddx=lambda x, y: deriv_dnw(x, y), **
     a = hh
 
     # Compute the time step
-    dt = cfl_diff_burger(a, xx)
+    dt = cfl_diff_burger(a[:-1], xx)
 
     # Compute the right hand side
     rhs = -a * ddx(xx, hh)
