@@ -199,15 +199,9 @@ def evolv_adv_burgers(
         
         # Fix boundaries 
         if bnd_limits[1] > 0: 
-            u_next_temp = u_next[bnd_limits[0] : -bnd_limits[1]]  # dnw scheme
+            u_next_temp = u_next[bnd_limits[0] : -bnd_limits[1]]  # dnw / central scheme
         else:
             u_next_temp = u_next[bnd_limits[0] :] # upw scheme
-
-        # XXX Remove this
-        # if bnd_type == 'constant':
-        #     unnt[:, i+1] = np.pad(u_next_temp, bnd_limits, bnd_type, constant_values=[unnt[i+1, -2], unnt[i+1, 1]])
-        # else:
-        #     unnt[:, i+1] = np.pad(u_next_temp, bnd_limits, bnd_type) 
 
         unnt[:, i+1] = np.pad(u_next_temp, bnd_limits, bnd_type) 
 
@@ -341,7 +335,7 @@ def evolv_Lax_uadv_burgers(
     xx: np.ndarray,
     hh: np.ndarray,
     nt: int,
-    u: np.ndarray,
+
     cfl_cut: float = 0.98,
     ddx = lambda x, y: deriv_dnw(x, y),
     bnd_type: str = "wrap",
@@ -364,8 +358,6 @@ def evolv_Lax_uadv_burgers(
         Function that depends on xx.
     nt : `int`
         Number of time steps.
-    u : `array`
-        Initial advection function over xx.
     cfl_cut : `array`
         Constant value to limit dt from cfl_adv_burger.
         By default 0.98
@@ -392,15 +384,14 @@ def evolv_Lax_uadv_burgers(
     unnt = np.zeros((len(xx), nt))
     unnt[:, 0] = hh
 
-    a=u
-
     for i in range(0, nt-1): 
 
         dt, rhs = step_uadv_burgers(xx, unnt[:, i], cfl_cut=cfl_cut, ddx=ddx)
-        rhs = 0.5 * (unnt[:, i+1] + unnt[:, i-1]) - rhs
 
         # Compute next timestep
-        u_next = unnt[:, i] + rhs * dt 
+        u_next = 0.5 * (np.roll(unnt[:, i], -1) + np.roll(unnt[:, i], 1)) \
+            - unnt[:, i] * dt / (np.roll(xx, -1) - np.roll(xx, 1)) \
+            * (np.roll(unnt[:, i], -1) - np.roll(unnt[:, i], 1))
         
         # Fix boundaries 
         if bnd_limits[1] > 0: 

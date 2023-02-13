@@ -65,6 +65,7 @@ def test_ex_2b():
     Requires
     ----------
     u_analytical : `function`
+    u_initial : `function`
     """
 
     x0 = -2.6
