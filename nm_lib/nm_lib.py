@@ -335,7 +335,6 @@ def evolv_Lax_uadv_burgers(
     xx: np.ndarray,
     hh: np.ndarray,
     nt: int,
-
     cfl_cut: float = 0.98,
     ddx = lambda x, y: deriv_dnw(x, y),
     bnd_type: str = "wrap",
@@ -521,7 +520,202 @@ def cfl_diff_burger(a, x):
     dx = np.diff(x)
     return np.min(dx / np.abs(a))
 
+def evolv_Rie_uadv_burgers(
+    xx: np.ndarray,
+    hh: np.ndarray,
+    nt: int,
+    cfl_cut: float = 0.98,
+    ddx = lambda x, y: deriv_upw(x, y),
+    bnd_type: str = "wrap",
+    bnd_limits: tuple = [1, 0],
+    **kwargs
+) -> tuple:
+    r"""
+    Advance the burger eq `nt` time-steps in time for `a` = `u`, using a Riemann solver.
 
+    Requires
+    --------
+    cfl_diff_burger
+
+    Parameters
+    ----------
+    xx : `array`
+        Spatial axis.
+    hh : `array`
+        Function that depends on xx.
+    nt : `int`
+        Number of iterations
+    cfl_cut : `float`
+        Constant value to limit dt from cfl_adv_burger.
+        By default 0.98
+    ddx : `lambda function`
+        Allows to change the space derivative function.
+        By default lambda x,y: deriv_upw(x, y)
+    bnd_type : `string`
+        It allows to select the type of boundaries.
+        By default 'wrap'
+    bnd_limits : `list(int)`
+        Array of two integer elements. The number of pixels that
+        will need to be updated with the boundary information.
+        By default [1,0]
+
+    Returns
+    -------
+    t : `array`
+        Time 1D array
+    unnt : `array`
+        Spatial and time evolution of u^n_j for n = (0,nt), where j represents
+        all the elements of the domain.
+    """
+
+    t = np.zeros((nt))
+    unnt = np.zeros((len(xx), nt))
+    unnt[:, 0] = hh
+
+    dx = xx[1] - xx[0]
+
+    for i in range(0, nt-1):
+
+        # 1. Compute u_L and u_R    
+        # u_L = unnt[:, i]   # u[i]
+        # u_R = unnt[:, i+1] # u[i+1]
+        u_L = np.roll(unnt[:, i], 0)
+        u_R = np.roll(unnt[:, i], -1) # XXX: What is going on here?
+
+        # 2. Compute corresponding fluxes
+        F_L = 0.5 * u_L**2
+        F_R = 0.5 * u_R**2 
+
+        # 3. Compute the propagation speed
+        v_a = np.maximum(np.abs(u_L), np.abs(u_R)) 
+
+        # 4. Compute the interface fluxes (Rusanov)
+        F_plus05 = 0.5 * (F_L + F_R) - 0.5 * v_a * (u_R - u_L) # [i+1/2]
+        F_int = (F_plus05 - np.roll(F_plus05, 1)) / dx # XXX: Why / dx?
+        
+        # 5. Advance the solution in time
+        dt = cfl_diff_burger(v_a[:-1], xx)
+        u_next = unnt[:, i] - dt * F_int  
+
+        # Boundary conditions 
+        if bnd_limits[1] > 0: 
+            u_next_temp = u_next[bnd_limits[0]:-bnd_limits[1]]  # dnw scheme
+        else:
+            u_next_temp = u_next[bnd_limits[0]:] # upw scheme
+
+        # Update the solution
+        unnt[:, i+1] = np.pad(u_next_temp, bnd_limits, bnd_type) 
+        t[i+1] = t[i] + dt
+
+    return t, unnt
+
+
+def evolve_Lax_Rie_uadv_burgers(
+    xx: np.ndarray,
+    hh: np.ndarray,
+    nt: int,
+    cfl_cut: float = 0.98,
+    ddx = lambda x, y: deriv_upw(x, y),
+    bnd_type: str = "wrap",
+    bnd_limits: tuple = [1, 0],
+    **kwargs
+) -> tuple:
+    r"""
+    Advance burger eq. `nt` time-steps for `a` = `u`, by combining the Lax and Riemann methods.
+
+    Requires
+    --------
+    cfl_diff_burger
+
+    Parameters
+    ----------
+    xx : `array`
+        Spatial axis.
+    hh : `array`
+        Function that depends on xx.
+    nt : `int`
+        Number of iterations
+    cfl_cut : `float`
+        Constant value to limit dt from cfl_adv_burger.
+        By default 0.98
+    ddx : `lambda function`
+        Allows to change the space derivative function.
+        By default lambda x,y: deriv_upw(x, y)
+    bnd_type : `string`
+        It allows to select the type of boundaries.
+        By default 'wrap'
+    bnd_limits : `list(int)`
+        Array of two integer elements. The number of pixels that
+        will need to be updated with the boundary information.
+        By default [1,0]
+
+    Returns
+    -------
+    t : `array`
+        Time 1D array
+    unnt : `array`
+        Spatial and time evolution of u^n_j for n = (0,nt), where j represents
+        all the elements of the domain.
+    """
+
+    t = np.zeros((nt))
+    unnt = np.zeros((len(xx), nt))
+    unnt[:, 0] = hh
+
+    dx = xx[1] - xx[0]
+
+    def flux_limiter(r):
+        thetas = np.array([1., 2.])
+        mins = np.zeros((len(thetas), len(r)))
+        for i, theta in enumerate(thetas):
+            mins[i] = np.min(( np.min(theta * r), np.min((1. + r)/2.), theta ))
+        phi = np.max((0, np.max(mins)))
+        return phi
+
+    for i in range(0, nt-1):
+
+        # Compute u_L and u_R    
+        u_L = np.roll(unnt[:, i], 0)  # u[i]
+        u_R = np.roll(unnt[:, i], -1) # u[i+1]
+
+        # Compute corresponding fluxes
+        F_L = 0.5 * u_L**2
+        F_R = 0.5 * u_R**2 
+
+        # Compute the propagation speed
+        v_a = np.maximum(np.abs(u_L), np.abs(u_R)) 
+        dt = cfl_diff_burger(v_a[:-1], xx)
+
+        # Compute the Riemann flux
+        F_Rie = 0.5 * (F_L + F_R) - 0.5 * v_a * (u_R - u_L) # [i+1/2]
+
+        # Compute the Lax flux
+        unnt_Lax = 0.5 * (np.roll(unnt[:, i], -1) + np.roll(unnt[:, i], 1)) \
+            - unnt[:, i] * dt / (np.roll(xx, -1) - np.roll(xx, 1)) \
+            * (np.roll(unnt[:, i], -1) - np.roll(unnt[:, i], 1))
+        F_Lax = unnt_Lax
+        # XXX: What is the Lax flux??????
+
+        # Compute the Lax-Rie flux
+        # XXX: what is r? We haven't calculated unnt[:, i+1] yet!
+        # r = (unnt[:, i] - unnt[:, i-1]) / (unnt[:, i+1] - unnt[:, i]) 
+        r = (u_L - np.roll(unnt[:, i], 1)) / (u_R + u_L)
+        F_Lax_Rie = F_Rie + flux_limiter(r) * (F_Lax - F_Rie)
+
+        # 5. Advance the solution in time
+        u_next = unnt[:, i] - dt * (F_Lax_Rie - np.roll(F_Lax_Rie, 1)) / dx 
+
+        # Boundary conditions 
+        if bnd_limits[1] > 0: 
+            u_next_temp = u_next[bnd_limits[0]:-bnd_limits[1]]  # dnw scheme
+        else:
+            u_next_temp = u_next[bnd_limits[0]:] # upw scheme
+
+        # Update the solution
+        unnt[:, i+1] = np.pad(u_next_temp, bnd_limits, bnd_type) 
+        t[i+1] = t[i] + dt
+
+    return t, unnt
 
 def ops_Lax_LL_Add(
     xx,
