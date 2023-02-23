@@ -579,8 +579,8 @@ def evolv_Rie_uadv_burgers(
         # 1. Compute u_L and u_R    
         # u_L = unnt[:, i]   # u[i]
         # u_R = unnt[:, i+1] # u[i+1]
-        u_L = np.roll(unnt[:, i], 0)
-        u_R = np.roll(unnt[:, i], -1) # XXX: What is going on here?
+        u_L = np.roll(unnt[:, i], 0) # JMS This operation is the same as u_L=unnt[:,i]
+        u_R = np.roll(unnt[:, i], -1) # XXX: What is going on here? JMS not sure what is your question
 
         # 2. Compute corresponding fluxes
         F_L = 0.5 * u_L**2
@@ -591,7 +591,7 @@ def evolv_Rie_uadv_burgers(
 
         # 4. Compute the interface fluxes (Rusanov)
         F_plus05 = 0.5 * (F_L + F_R) - 0.5 * v_a * (u_R - u_L) # [i+1/2]
-        F_int = (F_plus05 - np.roll(F_plus05, 1)) / dx # XXX: Why / dx?
+        F_int = (F_plus05 - np.roll(F_plus05, 1)) / dx # XXX: Why / dx? # JMS Otherwise it is not the right units. 
         
         # 5. Advance the solution in time
         dt = cfl_diff_burger(v_a[:-1], xx)
