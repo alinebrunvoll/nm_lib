@@ -330,7 +330,6 @@ def evolv_uadv_burgers(
 
     return t, unnt 
 
-
 def evolv_Lax_uadv_burgers(
     xx: np.ndarray,
     hh: np.ndarray,
@@ -457,6 +456,32 @@ def evolv_Lax_adv_burgers(
         all the elements of the domain.
     """
 
+    t = np.zeros((nt))
+    unnt = np.zeros((len(xx), nt))
+    unnt[:, 0] = hh
+
+    for i in range(0, nt-1): 
+
+        dt, rhs = step_adv_burgers(xx, unnt[:, i], a=a, cfl_cut=cfl_cut, ddx=ddx)
+
+        # Compute next timestep
+        u_next = 0.5 * (np.roll(unnt[:, i], -1) + np.roll(unnt[:, i], 1)) + rhs * dt 
+        
+        # Fix boundaries 
+        if bnd_limits[1] > 0: 
+            u_next_temp = u_next[bnd_limits[0] : -bnd_limits[1]]  # dnw scheme
+        else:
+            u_next_temp = u_next[bnd_limits[0] :] # upw scheme
+
+        unnt[:, i+1] = np.pad(u_next_temp, bnd_limits, bnd_type) 
+
+        # Update time
+        t[i+1] = t[i] + dt
+
+    return t, unnt
+
+
+
 
 def step_uadv_burgers(xx, hh, cfl_cut=0.98, ddx=lambda x, y: deriv_dnw(x, y), **kwargs):
     r"""
@@ -497,7 +522,6 @@ def step_uadv_burgers(xx, hh, cfl_cut=0.98, ddx=lambda x, y: deriv_dnw(x, y), **
     rhs = -a * ddx(xx, hh)
 
     return dt, rhs
-
 
 def cfl_diff_burger(a, x):
     r"""
@@ -609,7 +633,6 @@ def evolv_Rie_uadv_burgers(
 
     return t, unnt
 
-
 def evolve_Lax_Rie_uadv_burgers(
     xx: np.ndarray,
     hh: np.ndarray,
@@ -711,6 +734,7 @@ def evolve_Lax_Rie_uadv_burgers(
         else:
             u_next_temp = u_next[bnd_limits[0]:] # upw scheme
 
+
         # Update the solution
         unnt[:, i+1] = np.pad(u_next_temp, bnd_limits, bnd_type) 
         t[i+1] = t[i] + dt
@@ -773,7 +797,35 @@ def ops_Lax_LL_Add(
         Spatial and time evolution of u^n_j for n = (0,nt), and where j represents
         all the elements of the domain.
     """
+    t = np.zeros((nt))
+    unnt = np.zeros((len(xx), nt))
+    unnt[:, 0] = hh
 
+    for i in range(0, nt-1): 
+
+        dt_u, rhs_u = step_adv_burgers(xx, unnt[:, i], a, cfl_cut=cfl_cut, ddx=ddx)
+        dt_v, rhs_v = step_adv_burgers(xx, unnt[:, i], b, cfl_cut=cfl_cut, ddx=ddx)
+        
+        # Calculate timestep
+        dt = dt_v - dt_u 
+
+        # Compute next timestep
+        unn = 0.5 * (np.roll(unnt[:, i], -1) + np.roll(unnt[:, i], 1)) + rhs_u * dt
+        vnn = 0.5 * (np.roll(unnt[:, i], -1) + np.roll(unnt[:, i], 1)) + rhs_v * dt
+        u_next = unn + vnn - unnt[:, i]
+        
+        # Fix boundaries 
+        if bnd_limits[1] > 0: 
+            u_next_temp = u_next[bnd_limits[0] : -bnd_limits[1]]  # dnw/centr scheme
+        else:
+            u_next_temp = u_next[bnd_limits[0] :] # upw scheme
+
+        unnt[:, i+1] = np.pad(u_next_temp, bnd_limits, bnd_type) 
+
+        # Update time
+        t[i+1] = t[i] + dt
+
+    return t, unnt
 
 def ops_Lax_LL_Lie(
     xx,
@@ -830,7 +882,32 @@ def ops_Lax_LL_Lie(
         Spatial and time evolution of u^n_j for n = (0,nt), and where j represents
         all the elements of the domain.
     """
+    t = np.zeros((nt))
+    unnt = np.zeros((len(xx), nt))
+    unnt[:, 0] = hh
 
+    for i in range(0, nt-1): 
+
+        dt_u, rhs_u = step_adv_burgers(xx, unnt[:, i], a=a, cfl_cut=cfl_cut, ddx=ddx)
+        unn = 0.5 * (np.roll(unnt[:, i], -1) + np.roll(unnt[:, i], 1)) + rhs_u * dt_u 
+
+        dt_v, rhs_v = step_adv_burgers(xx, unn, a=b, cfl_cut=cfl_cut, ddx=ddx)
+        vnn = 0.5 * (np.roll(unn, -1) + np.roll(unn, 1)) + rhs_v * dt_v
+                
+        u_next = unn + vnn - unnt[:, i]
+        
+        # Fix boundaries 
+        if bnd_limits[1] > 0: 
+            u_next_temp = u_next[bnd_limits[0] : -bnd_limits[1]]  # dnw/centr scheme
+        else:
+            u_next_temp = u_next[bnd_limits[0] :] # upw scheme
+
+        unnt[:, i+1] = np.pad(u_next_temp, bnd_limits, bnd_type) 
+
+        # Update time
+        t[i+1] = t[i] + dt_v
+
+    return t, unnt
 
 def ops_Lax_LL_Strang(
     xx,
@@ -888,9 +965,43 @@ def ops_Lax_LL_Strang(
         Spatial and time evolution of u^n_j for n = (0,nt), and where j represents
         all the elements of the domain.
     """
+    t = np.zeros((nt))
+    unnt = np.zeros((len(xx), nt))
+    unnt[:, 0] = hh 
+    
+    for i in range(0, nt-1): 
 
+        # Calculate timestep
+        dt = cfl_adv_burger(a, xx)
 
-def osp_Lax_LH_Strang(
+        dt_u, rhs_u = step_adv_burgers(xx, unnt[:, i], a, cfl_cut=cfl_cut, ddx=ddx)
+        # Advance half a timestep:
+        u_half = 0.5 * (np.roll(unnt[:, i], -1) + np.roll(unnt[:, i], 1)) + rhs_u * dt_u * 0.5
+        
+        dt_v, rhs_v = step_adv_burgers(xx, unnt[:, i], b, cfl_cut=cfl_cut, ddx=ddx)
+        # Advance half a timestep:
+        v_half = 0.5 * (np.roll(u_half, -1) + np.roll(u_half, 1)) + rhs_v * dt_v * 0.5
+
+        dt_w, rhs_w = step_adv_burgers(xx, unnt[:, i], a, cfl_cut=cfl_cut, ddx=ddx)
+        # Advance half a timestep:
+        w_half = 0.5 * (np.roll(v_half, -1) + np.roll(v_half, 1)) + rhs_w * dt_w * 0.5
+
+        u_next = w_half
+        
+        # Fix boundaries 
+        if bnd_limits[1] > 0: 
+            u_next_temp = u_next[bnd_limits[0] : -bnd_limits[1]]  # dnw/centr scheme
+        else:
+            u_next_temp = u_next[bnd_limits[0] :] # upw scheme
+
+        unnt[:, i+1] = np.pad(u_next_temp, bnd_limits, bnd_type) 
+
+        # Update time
+        t[i+1] = t[i] + dt
+
+    return t, unnt
+
+def ops_Lax_LH_Strang(
     xx,
     hh,
     nt,
@@ -947,7 +1058,44 @@ def osp_Lax_LH_Strang(
         Spatial and time evolution of u^n_j for n = (0,nt), and where j represents
         all the elements of the domain.
     """
+    t = np.zeros((nt))
+    unnt = np.zeros((len(xx), nt))
+    unnt[:, 0] = hh
 
+    for i in range(0, nt-1): 
+
+        # Calculate timestep
+        dt = cfl_adv_burger(a, xx)
+
+        dt_u, rhs_u = step_adv_burgers(xx, unnt[:, i], a, cfl_cut=cfl_cut, ddx=ddx)
+        unn = 0.5 * (np.roll(unnt[:, i], -1) + np.roll(unnt[:, i], 1)) + rhs_u * dt_u * 0.5
+
+        dt_v, rhs_v = step_adv_burgers(xx, unnt[:, i], b, cfl_cut=cfl_cut, ddx=ddx)
+        # Using the Hyman predictor-corrector scheme
+        if i == 0:
+            unn, u_prev, dt_v = hyman(xx, unn, dt, b, cfl_cut=cfl_cut, ddx=ddx)
+        else: 
+            unn, o_prev, dt_v = hyman(xx, unn, dt, b, cfl_cut=cfl_cut, ddx=ddx, fold=u_prev, dtold=dt_v)
+        
+        vnn = 0.5 * (np.roll(unnt[:, i], -1) + np.roll(unnt[:, i], 1)) + rhs_v * dt_v
+
+        dt_w, rhs_w = step_adv_burgers(xx, vnn, a, cfl_cut=cfl_cut, ddx=ddx)
+        wnn = 0.5 * (np.roll(vnn, -1) + np.roll(vnn, 1)) + rhs_w * dt_w * 0.5 # Half timestep
+
+        u_next = wnn
+        
+        # Fix boundaries 
+        if bnd_limits[1] > 0: 
+            u_next_temp = u_next[bnd_limits[0] : -bnd_limits[1]]  # dnw/centr scheme
+        else:
+            u_next_temp = u_next[bnd_limits[0] :] # upw scheme
+
+        unnt[:, i+1] = np.pad(u_next_temp, bnd_limits, bnd_type) 
+
+        # Update time
+        t[i+1] = t[i] + dt
+
+    return t, unnt
 
 def step_diff_burgers(xx, hh, a, ddx=lambda x, y: deriv_cent(x, y), **kwargs):
     r"""
@@ -972,6 +1120,93 @@ def step_diff_burgers(xx, hh, a, ddx=lambda x, y: deriv_cent(x, y), **kwargs):
         Right hand side of (u^{n+1}-u^{n})/dt = from burgers eq, i.e., x \frac{\partial u}{\partial x}
     """
 
+    # rhs = a * ddx(xx, hh) 
+
+
+
+    # rhs = un - uo - a * (np.roll(un, -1) - 2 * un + np.roll(un, 1)) * dt #/ dx**2
+    rhs = a * (np.roll(hh, -1) - 2 * hh + np.roll(hh, 1)) #* dt
+
+    return rhs
+
+def cfl():
+    # Put the right cfl diff here. (Von Neumann analysis.)
+    pass
+
+def evolve(
+    xx: np.ndarray,
+    hh: np.ndarray,
+    a: float,
+    nt: int,
+    cfl_cut: float = 0.98,
+    ddx = lambda x, y: deriv_upw(x, y),
+    bnd_type: str = "wrap",
+    bnd_limits: tuple = [1, 0],
+    **kwargs
+) -> tuple:
+    r"""
+    Advance burger eq. `nt` time-steps for `a` = `u`, by combining the Lax and Riemann methods.
+
+    Requires
+    --------
+    cfl_diff_burger
+
+    Parameters
+    ----------
+    xx : `array`
+        Spatial axis.
+    hh : `array`
+        Function that depends on xx.
+    nt : `int`
+        Number of iterations
+    cfl_cut : `float`
+        Constant value to limit dt from cfl_adv_burger.
+        By default 0.98
+    ddx : `lambda function`
+        Allows to change the space derivative function.
+        By default lambda x,y: deriv_upw(x, y)
+    bnd_type : `string`
+        It allows to select the type of boundaries.
+        By default 'wrap'
+    bnd_limits : `list(int)`
+        Array of two integer elements. The number of pixels that
+        will need to be updated with the boundary information.
+        By default [1,0]
+
+    Returns
+    -------
+    t : `array`
+        Time 1D array
+    unnt : `array`
+        Spatial and time evolution of u^n_j for n = (0,nt), where j represents
+        all the elements of the domain.
+    """
+
+    t = np.zeros((nt))
+    unnt = np.zeros((len(xx), nt))
+    unnt[:, 0] = hh
+
+    for i in range(0, nt-1): 
+
+        rhs = step_diff_burgers(xx, unnt[:, i], a=a, cfl_cut=cfl_cut, ddx=ddx)
+        dt = cfl(xx, unnt[:, i], a=a, cfl_cut=cfl_cut, ddx=ddx)
+
+        # Compute next timestep
+        u_next = unnt[:, i] + rhs * dt
+        
+        # Fix boundaries 
+        if bnd_limits[1] > 0: 
+            u_next_temp = u_next[bnd_limits[0] : -bnd_limits[1]]  # dnw / central scheme
+        else:
+            u_next_temp = u_next[bnd_limits[0] :] # upw scheme
+
+        unnt[:, i+1] = np.pad(u_next_temp, bnd_limits, bnd_type) 
+
+        # Update time
+        t[i+1] = t[i] + dt
+
+    return t, unnt
+
 
 def NR_f(xx, un, uo, a, dt, **kwargs):
     r"""
@@ -982,9 +1217,9 @@ def NR_f(xx, un, uo, a, dt, **kwargs):
     xx : `array`
         Spatial axis.
     un : `array`
-        Function that depends on xx.
+        Function that depends on xx. (u^{n+1})
     uo : `array`
-        Function that depends on xx.
+        Function that depends on xx. (u^{n})
     a : `float` or `array`
         Either constant, or array which multiply the right hand side of the Burger's eq.
     dt : `float`
@@ -995,6 +1230,14 @@ def NR_f(xx, un, uo, a, dt, **kwargs):
     `array`
         function  u^{n+1}_{j}-u^{n}_{j} - a (u^{n+1}_{j+1} - 2 u^{n+1}_{j} -u^{n+1}_{j-1}) dt
     """
+
+    dx = xx[1] - xx[0]
+
+    # F_j =  un - uo - a * (np.roll(un, -1) - 2 * un + np.roll(un, 1)) * dt #/ dx**2
+
+    # return F_j
+
+    return un - step_diff_burgers(xx, un, a) * dt - uo 
 
 
 def jacobian(xx, un, a, dt, **kwargs):
@@ -1017,6 +1260,22 @@ def jacobian(xx, un, a, dt, **kwargs):
     `array`
         Jacobian F_j'(u^{n+1}{k})
     """
+
+    # Calculate jacobian
+    # Matrix that is 0 or 1 depending on when the indx is j or k
+
+    dx = xx[1] - xx[0]
+
+    J = np.zeros((len(xx), len(xx)))
+
+    for i in range(len(xx)):
+        J[i, i] = 1 + dt * 2 * a / dx**2
+        if i < len(xx) - 1:
+            J[i, i+1] = -dt * a / dx**2
+        if i > 1:
+            J[i, i-1] = -dt * a / dx**2
+
+    return J
 
 
 def Newton_Raphson(
@@ -1115,9 +1374,9 @@ def NR_f_u(xx, un, uo, dt, **kwargs):
     xx : `array`
         Spatial axis.
     un : `array`
-        Function that depends on xx.
+        Function that depends on xx. 
     uo : `array`
-        Function that depends on xx.
+        Function that depends on xx. 
     a : `float` and `array`
         Either constant, or array which multiply the right hand side of the Burger's eq.
     dt : `int`
