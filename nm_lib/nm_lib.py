@@ -1067,19 +1067,19 @@ def ops_Lax_LH_Strang(
         # Calculate timestep
         dt = cfl_adv_burger(a, xx)
 
-        dt_u, rhs_u = step_adv_burgers(xx, unnt[:, i], a, cfl_cut=cfl_cut, ddx=ddx)
+        dt_u, rhs_u = step_adv_burgers(xx, unnt[:, i], a=a, cfl_cut=cfl_cut, ddx=ddx)
         unn = 0.5 * (np.roll(unnt[:, i], -1) + np.roll(unnt[:, i], 1)) + rhs_u * dt_u * 0.5
 
-        dt_v, rhs_v = step_adv_burgers(xx, unnt[:, i], b, cfl_cut=cfl_cut, ddx=ddx)
+        dt_v, rhs_v = step_adv_burgers(xx, unn, a=b, cfl_cut=cfl_cut, ddx=ddx)
         # Using the Hyman predictor-corrector scheme
         if i == 0:
-            unn, u_prev, dt_v = hyman(xx, unn, dt, b, cfl_cut=cfl_cut, ddx=ddx)
+            unn, u_prev, dt_v = hyman(xx, unn, dt, a=b, cfl_cut=cfl_cut, ddx=ddx)
         else: 
-            unn, o_prev, dt_v = hyman(xx, unn, dt, b, cfl_cut=cfl_cut, ddx=ddx, fold=u_prev, dtold=dt_v)
+            unn, u_prev, dt_v = hyman(xx, unn, dt, a=b, cfl_cut=cfl_cut, ddx=ddx, fold=u_prev, dtold=dt_v)
         
-        vnn = 0.5 * (np.roll(unnt[:, i], -1) + np.roll(unnt[:, i], 1)) + rhs_v * dt_v
+        vnn = 0.5 * (np.roll(unn, -1) + np.roll(unn, 1)) + rhs_v * dt_v
 
-        dt_w, rhs_w = step_adv_burgers(xx, vnn, a, cfl_cut=cfl_cut, ddx=ddx)
+        dt_w, rhs_w = step_adv_burgers(xx, vnn, a=a, cfl_cut=cfl_cut, ddx=ddx)
         wnn = 0.5 * (np.roll(vnn, -1) + np.roll(vnn, 1)) + rhs_w * dt_w * 0.5 # Half timestep
 
         u_next = wnn
