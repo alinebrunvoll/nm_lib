@@ -37,7 +37,6 @@ def deriv_dnw(xx, hh, **kwargs):
 
     return hp
 
-
 def order_conv(hh, hh2, hh4, **kwargs):
     """
     Computes the order of convergence of a derivative function.
@@ -56,7 +55,6 @@ def order_conv(hh, hh2, hh4, **kwargs):
         The order of convergence.
     """
 
-
 def deriv_4tho(xx, hh, **kwargs):
     """
     Returns the 4th order derivative of hh respect to xx.
@@ -74,7 +72,6 @@ def deriv_4tho(xx, hh, **kwargs):
         The centered 4th order derivative of hh respect to xx.
         Last and first two grid points are ill calculated.
     """
-
 
 def step_adv_burgers(
     xx, hh, a, cfl_cut=0.98, ddx=lambda x, y: deriv_dnw(x, y), **kwargs
@@ -115,7 +112,6 @@ def step_adv_burgers(
 
     return dt, rhs
 
-
 def cfl_adv_burger(a, x):
     """
     Computes the dt_fact, i.e., Courant, Fredrich, and Lewy condition for the
@@ -136,8 +132,7 @@ def cfl_adv_burger(a, x):
 
     dx = np.gradient(x)
 
-    return np.min(dx / np.abs(a))
-
+    return np.min(dx / np.abs(a)) 
 
 def evolv_adv_burgers(
     xx,
@@ -209,7 +204,6 @@ def evolv_adv_burgers(
         t[i+1] = t[i] + dt
 
     return t, unnt
-
 
 def deriv_upw(xx, hh, **kwargs):
     r"""
@@ -480,9 +474,6 @@ def evolv_Lax_adv_burgers(
 
     return t, unnt
 
-
-
-
 def step_uadv_burgers(xx, hh, cfl_cut=0.98, ddx=lambda x, y: deriv_dnw(x, y), **kwargs):
     r"""
     Right hand side of Burger's eq. where a is u, i.e hh.
@@ -516,9 +507,9 @@ def step_uadv_burgers(xx, hh, cfl_cut=0.98, ddx=lambda x, y: deriv_dnw(x, y), **
     a = hh
 
     # Compute the time step
-    dt = cfl_diff_burger(a[:-1], xx)
+    dt = cfl_adv_burger(a[:-1], xx)
 
-    # Compute the right hand side
+    # Compute the right hand sidemodule load PyTorch-bundle/1.10.0-MKL-bundle-pre-optimised
     rhs = -a * ddx(xx, hh)
 
     return dt, rhs
@@ -541,8 +532,9 @@ def cfl_diff_burger(a, x):
         min(dx/|a|)
     """
 
-    dx = np.diff(x)
-    return np.min(dx / np.abs(a))
+    # dx = np.diff(x)
+    dx = np.gradient(x)
+    return np.min(dx**2 / np.abs(a))
 
 def evolv_Rie_uadv_burgers(
     xx: np.ndarray,
@@ -888,11 +880,17 @@ def ops_Lax_LL_Lie(
 
     for i in range(0, nt-1): 
 
-        dt_u, rhs_u = step_adv_burgers(xx, unnt[:, i], a=a, cfl_cut=cfl_cut, ddx=ddx)
-        unn = 0.5 * (np.roll(unnt[:, i], -1) + np.roll(unnt[:, i], 1)) + rhs_u * dt_u 
+        dt_u = cfl_adv_burger(a, xx) * cfl_cut
+        dt_v = cfl_adv_burger(b, xx) * cfl_cut
+        dt = np.min([dt_u, dt_v])
+        
+        _, rhs_u = step_adv_burgers(xx, unnt[:, i], a=a, cfl_cut=cfl_cut, ddx=ddx)
 
-        dt_v, rhs_v = step_adv_burgers(xx, unn, a=b, cfl_cut=cfl_cut, ddx=ddx)
-        vnn = 0.5 * (np.roll(unn, -1) + np.roll(unn, 1)) + rhs_v * dt_v
+        unn = 0.5 * (np.roll(unnt[:, i], -1) + np.roll(unnt[:, i], 1)) + rhs_u * dt 
+
+        _, rhs_v = step_adv_burgers(xx, unn, a=b, cfl_cut=cfl_cut, ddx=ddx)
+        
+        vnn = 0.5 * (np.roll(unn, -1) + np.roll(unn, 1)) + rhs_v * dt
                 
         u_next = unn + vnn - unnt[:, i]
         
@@ -905,7 +903,7 @@ def ops_Lax_LL_Lie(
         unnt[:, i+1] = np.pad(u_next_temp, bnd_limits, bnd_type) 
 
         # Update time
-        t[i+1] = t[i] + dt_v
+        t[i+1] = t[i] + dt
 
     return t, unnt
 
@@ -972,19 +970,24 @@ def ops_Lax_LL_Strang(
     for i in range(0, nt-1): 
 
         # Calculate timestep
-        dt = cfl_adv_burger(a, xx)
+        dt_u = cfl_adv_burger(a, xx) * cfl_cut
+        dt_v = cfl_adv_burger(b, xx) * cfl_cut
 
-        dt_u, rhs_u = step_adv_burgers(xx, unnt[:, i], a, cfl_cut=cfl_cut, ddx=ddx)
+        dt = np.min([dt_u, dt_v])
+
+        _, rhs_u = step_adv_burgers(xx, unnt[:, i], a, cfl_cut=cfl_cut, ddx=ddx)
         # Advance half a timestep:
-        u_half = 0.5 * (np.roll(unnt[:, i], -1) + np.roll(unnt[:, i], 1)) + rhs_u * dt_u * 0.5
+        u_half = 0.5 * (np.roll(unnt[:, i], -1) + np.roll(unnt[:, i], 1)) + rhs_u * dt * 0.5
         
-        dt_v, rhs_v = step_adv_burgers(xx, unnt[:, i], b, cfl_cut=cfl_cut, ddx=ddx)
+        # _, rhs_v = step_adv_burgers(xx, u_half[:, i], b, cfl_cut=cfl_cut, ddx=ddx)
+        _, rhs_v = step_adv_burgers(xx, u_half[i], b, cfl_cut=cfl_cut, ddx=ddx)
         # Advance half a timestep:
-        v_half = 0.5 * (np.roll(u_half, -1) + np.roll(u_half, 1)) + rhs_v * dt_v * 0.5
+        v_half = 0.5 * (np.roll(u_half, -1) + np.roll(u_half, 1)) + rhs_v * dt * 0.5
 
-        dt_w, rhs_w = step_adv_burgers(xx, unnt[:, i], a, cfl_cut=cfl_cut, ddx=ddx)
+        dt_w, rhs_w = step_adv_burgers(xx, v_half[i], a, cfl_cut=cfl_cut, ddx=ddx)
         # Advance half a timestep:
-        w_half = 0.5 * (np.roll(v_half, -1) + np.roll(v_half, 1)) + rhs_w * dt_w * 0.5
+        # w_half = 0.5 * (np.roll(v_half, -1) + np.roll(v_half, 1)) + rhs_w * dt_w * 0.5
+        w_half = 0.5 * (np.roll(v_half, -1) + np.roll(v_half, 1)) + rhs_w * dt * 0.5
 
         u_next = w_half
         
@@ -1118,14 +1121,14 @@ def step_diff_burgers(xx, hh, a, ddx=lambda x, y: deriv_cent(x, y), **kwargs):
     -------
     `array`
         Right hand side of (u^{n+1}-u^{n})/dt = from burgers eq, i.e., x \frac{\partial u}{\partial x}
-    """
+    """    
+    # evolv func
 
-    # rhs = a * ddx(xx, hh) 
+    # use cfl condition
 
+    dx = xx[1] - xx[0]
 
-
-    # rhs = un - uo - a * (np.roll(un, -1) - 2 * un + np.roll(un, 1)) * dt #/ dx**2
-    rhs = a * (np.roll(hh, -1) - 2 * hh + np.roll(hh, 1)) #* dt
+    rhs = a * (np.roll(hh, -1) - 2 * hh + np.roll(hh, 1)) / dx**2 
 
     return rhs
 
@@ -1139,7 +1142,6 @@ def evolve(
     a: float,
     nt: int,
     cfl_cut: float = 0.98,
-    ddx = lambda x, y: deriv_upw(x, y),
     bnd_type: str = "wrap",
     bnd_limits: tuple = [1, 0],
     **kwargs
@@ -1188,8 +1190,8 @@ def evolve(
 
     for i in range(0, nt-1): 
 
-        rhs = step_diff_burgers(xx, unnt[:, i], a=a, cfl_cut=cfl_cut, ddx=ddx)
-        dt = cfl(xx, unnt[:, i], a=a, cfl_cut=cfl_cut, ddx=ddx)
+        rhs = step_diff_burgers(xx, unnt[:, i], a=a, cfl_cut=cfl_cut)
+        dt = cfl_diff_burger(a, xx)
 
         # Compute next timestep
         u_next = unnt[:, i] + rhs * dt
@@ -1206,7 +1208,6 @@ def evolve(
         t[i+1] = t[i] + dt
 
     return t, unnt
-
 
 def NR_f(xx, un, uo, a, dt, **kwargs):
     r"""
@@ -1238,7 +1239,6 @@ def NR_f(xx, un, uo, a, dt, **kwargs):
     # return F_j
 
     return un - step_diff_burgers(xx, un, a) * dt - uo 
-
 
 def jacobian(xx, un, a, dt, **kwargs):
     r"""
@@ -1276,7 +1276,6 @@ def jacobian(xx, un, a, dt, **kwargs):
             J[i, i-1] = -dt * a / dx**2
 
     return J
-
 
 def Newton_Raphson(
     xx, hh, a, dt, nt, toll=1e-5, ncount=2, bnd_type="wrap", bnd_limits=[1, 1], **kwargs
