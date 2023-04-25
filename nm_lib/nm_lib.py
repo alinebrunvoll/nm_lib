@@ -534,7 +534,7 @@ def cfl_diff_burger(a, x):
 
     # dx = np.diff(x)
     dx = np.gradient(x)
-    return np.min(dx**2 / np.abs(a))
+    return np.min(dx**2 / (2 * np.abs(a))) # DEBUG: added 2 under !!
 
 def evolv_Rie_uadv_burgers(
     xx: np.ndarray,
@@ -1124,11 +1124,10 @@ def step_diff_burgers(xx, hh, a, ddx=lambda x, y: deriv_cent(x, y), **kwargs):
     """    
     # evolv func
 
-    # use cfl condition
-
     dx = xx[1] - xx[0]
 
     rhs = a * (np.roll(hh, -1) - 2 * hh + np.roll(hh, 1)) / dx**2 
+    # rhs = 1st and 2nd derivative of hh
 
     return rhs
 
@@ -1191,7 +1190,7 @@ def evolve(
     for i in range(0, nt-1): 
 
         rhs = step_diff_burgers(xx, unnt[:, i], a=a, cfl_cut=cfl_cut)
-        dt = cfl_diff_burger(a, xx)
+        dt = cfl_diff_burger(a, xx) * cfl_cut
 
         # Compute next timestep
         u_next = unnt[:, i] + rhs * dt
@@ -1363,7 +1362,6 @@ def Newton_Raphson(
 
     return t, unnt, errt, countt
 
-
 def NR_f_u(xx, un, uo, dt, **kwargs):
     r"""
     NR F function.
@@ -1387,6 +1385,13 @@ def NR_f_u(xx, un, uo, dt, **kwargs):
         function  u^{n+1}_{j}-u^{n}_{j} - a (u^{n+1}_{j+1} - 2 u^{n+1}_{j} -u^{n+1}_{j-1}) dt
     """
 
+    ### Implement this
+    # Same as above 
+
+    # function  u^{n+1}_{j}-u^{n}_{j} - u^{n+1}_j (u^{n+1}_{j+1} - 2 u^{n+1}_{j} -u^{n+1}_{j-1}) dt
+
+    # with corresponding jacobian and newton raphson
+
 
 def jacobian_u(xx, un, dt, **kwargs):
     """
@@ -1408,7 +1413,6 @@ def jacobian_u(xx, un, dt, **kwargs):
     `array`
         Jacobian F_j'(u^{n+1}{k})
     """
-
 
 def Newton_Raphson_u(
     xx, hh, dt, nt, toll=1e-5, ncount=2, bnd_type="wrap", bnd_limits=[1, 1], **kwargs
@@ -1493,7 +1497,6 @@ def Newton_Raphson_u(
 
     return t, unnt, errt, countt
 
-
 def taui_sts(nu, niter, iiter):
     """
     STS parabolic scheme. [(nu -1)cos(pi (2 iiter - 1) / 2 niter) + nu + 1]^{-1}
@@ -1512,7 +1515,6 @@ def taui_sts(nu, niter, iiter):
     `float`
         [(nu -1)cos(pi (2 iiter - 1) / 2 niter) + nu + 1]^{-1}
     """
-
 
 def evol_sts(
     xx,
@@ -1568,7 +1570,6 @@ def evol_sts(
         all the elements of the domain.
     """
 
-
 def hyman(
     xx,
     f,
@@ -1620,10 +1621,8 @@ def hyman(
 
     return f, fold, dtold
 
-
 def hyman_corr(f, fsav, dfdt, c2):
     return fsav + c2 * dfdt
-
 
 def hyman_pred(f, fold, dfdt, a1, b1, a2, b2):
     fsav = np.copy(f)
