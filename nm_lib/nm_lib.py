@@ -507,9 +507,10 @@ def step_uadv_burgers(xx, hh, cfl_cut=0.98, ddx=lambda x, y: deriv_dnw(x, y), **
     a = hh
 
     # Compute the time step
-    dt = cfl_adv_burger(a[:-1], xx)
+    # dt = cfl_adv_burger(a[:-1], xx)
+    dt = cfl_adv_burger(a, xx)
 
-    # Compute the right hand sidemodule load PyTorch-bundle/1.10.0-MKL-bundle-pre-optimised
+    # Compute the right hand side
     rhs = -a * ddx(xx, hh)
 
     return dt, rhs
@@ -532,9 +533,8 @@ def cfl_diff_burger(a, x):
         min(dx/|a|)
     """
 
-    # dx = np.diff(x)
     dx = np.gradient(x)
-    return np.min(dx**2 / (2 * np.abs(a))) # DEBUG: added 2 under !!
+    return np.min(dx**2 / (2 * np.abs(a))) 
 
 def evolv_Rie_uadv_burgers(
     xx: np.ndarray,
@@ -593,10 +593,8 @@ def evolv_Rie_uadv_burgers(
     for i in range(0, nt-1):
 
         # 1. Compute u_L and u_R    
-        # u_L = unnt[:, i]   # u[i]
-        # u_R = unnt[:, i+1] # u[i+1]
-        u_L = np.roll(unnt[:, i], 0) # JMS This operation is the same as u_L=unnt[:,i]
-        u_R = np.roll(unnt[:, i], -1) # XXX: What is going on here? JMS not sure what is your question
+        u_L = np.roll(unnt[:, i], 0) 
+        u_R = np.roll(unnt[:, i], -1) 
 
         # 2. Compute corresponding fluxes
         F_L = 0.5 * u_L**2
@@ -607,10 +605,10 @@ def evolv_Rie_uadv_burgers(
 
         # 4. Compute the interface fluxes (Rusanov)
         F_plus05 = 0.5 * (F_L + F_R) - 0.5 * v_a * (u_R - u_L) # [i+1/2]
-        F_int = (F_plus05 - np.roll(F_plus05, 1)) / dx # XXX: Why / dx? # JMS Otherwise it is not the right units. 
+        F_int = (F_plus05 - np.roll(F_plus05, 1)) / dx 
         
         # 5. Advance the solution in time
-        dt = cfl_diff_burger(v_a[:-1], xx)
+        dt = cfl_adv_burger(v_a, xx)
         u_next = unnt[:, i] - dt * F_int  
 
         # Boundary conditions 
@@ -699,7 +697,7 @@ def evolve_Lax_Rie_uadv_burgers(
 
         # Compute the propagation speed
         v_a = np.maximum(np.abs(u_L), np.abs(u_R)) 
-        dt = cfl_diff_burger(v_a[:-1], xx)
+        dt = cfl_adv_burger(v_a, xx)
 
         # Compute the Riemann flux
         F_Rie = 0.5 * (F_L + F_R) - 0.5 * v_a * (u_R - u_L) # [i+1/2]
@@ -709,11 +707,8 @@ def evolve_Lax_Rie_uadv_burgers(
             - unnt[:, i] * dt / (np.roll(xx, -1) - np.roll(xx, 1)) \
             * (np.roll(unnt[:, i], -1) - np.roll(unnt[:, i], 1))
         F_Lax = unnt_Lax
-        # XXX: What is the Lax flux??????
 
         # Compute the Lax-Rie flux
-        # XXX: what is r? We haven't calculated unnt[:, i+1] yet!
-        # r = (unnt[:, i] - unnt[:, i-1]) / (unnt[:, i+1] - unnt[:, i]) 
         r = (u_L - np.roll(unnt[:, i], 1)) / (u_R + u_L)
         F_Lax_Rie = F_Rie + flux_limiter(r) * (F_Lax - F_Rie)
 
@@ -799,7 +794,7 @@ def ops_Lax_LL_Add(
         dt_v, rhs_v = step_adv_burgers(xx, unnt[:, i], b, cfl_cut=cfl_cut, ddx=ddx)
         
         # Calculate timestep
-        dt = dt_v - dt_u 
+        dt = np.min([dt_v, dt_u])
 
         # Compute next timestep
         unn = 0.5 * (np.roll(unnt[:, i], -1) + np.roll(unnt[:, i], 1)) + rhs_u * dt
@@ -979,14 +974,12 @@ def ops_Lax_LL_Strang(
         # Advance half a timestep:
         u_half = 0.5 * (np.roll(unnt[:, i], -1) + np.roll(unnt[:, i], 1)) + rhs_u * dt * 0.5
         
-        # _, rhs_v = step_adv_burgers(xx, u_half[:, i], b, cfl_cut=cfl_cut, ddx=ddx)
         _, rhs_v = step_adv_burgers(xx, u_half[i], b, cfl_cut=cfl_cut, ddx=ddx)
         # Advance half a timestep:
         v_half = 0.5 * (np.roll(u_half, -1) + np.roll(u_half, 1)) + rhs_v * dt * 0.5
 
         dt_w, rhs_w = step_adv_burgers(xx, v_half[i], a, cfl_cut=cfl_cut, ddx=ddx)
         # Advance half a timestep:
-        # w_half = 0.5 * (np.roll(v_half, -1) + np.roll(v_half, 1)) + rhs_w * dt_w * 0.5
         w_half = 0.5 * (np.roll(v_half, -1) + np.roll(v_half, 1)) + rhs_w * dt * 0.5
 
         u_next = w_half
@@ -1131,10 +1124,6 @@ def step_diff_burgers(xx, hh, a, ddx=lambda x, y: deriv_cent(x, y), **kwargs):
 
     return rhs
 
-def cfl():
-    # Put the right cfl diff here. (Von Neumann analysis.)
-    pass
-
 def evolve(
     xx: np.ndarray,
     hh: np.ndarray,
@@ -1146,7 +1135,7 @@ def evolve(
     **kwargs
 ) -> tuple:
     r"""
-    Advance burger eq. `nt` time-steps for `a` = `u`, by combining the Lax and Riemann methods.
+    Advance burger eq. `nt` time-steps for `a` = `u` for the Newton-Rhapson method.
 
     Requires
     --------
@@ -1189,8 +1178,9 @@ def evolve(
 
     for i in range(0, nt-1): 
 
+        dx = xx[1] - xx[0]
         rhs = step_diff_burgers(xx, unnt[:, i], a=a, cfl_cut=cfl_cut)
-        dt = cfl_diff_burger(a, xx) * cfl_cut
+        dt = cfl_diff_burger(a, xx) * cfl_cut 
 
         # Compute next timestep
         u_next = unnt[:, i] + rhs * dt
@@ -1233,11 +1223,11 @@ def NR_f(xx, un, uo, a, dt, **kwargs):
 
     dx = xx[1] - xx[0]
 
-    # F_j =  un - uo - a * (np.roll(un, -1) - 2 * un + np.roll(un, 1)) * dt #/ dx**2
+    F_j =  un - uo - a * (np.roll(un, -1) - 2 * un + np.roll(un, 1)) * dt / dx**2
 
-    # return F_j
+    return F_j
 
-    return un - step_diff_burgers(xx, un, a) * dt - uo 
+    # return un - step_diff_burgers(xx, un, a) * dt - uo 
 
 def jacobian(xx, un, a, dt, **kwargs):
     r"""
@@ -1382,16 +1372,11 @@ def NR_f_u(xx, un, uo, dt, **kwargs):
     Returns
     -------
     `array`
-        function  u^{n+1}_{j}-u^{n}_{j} - a (u^{n+1}_{j+1} - 2 u^{n+1}_{j} -u^{n+1}_{j-1}) dt
+        function  u^{n+1}_{j}-u^{n}_{j} - u^{n+1}_j (u^{n+1}_{j+1} - 2 u^{n+1}_{j} -u^{n+1}_{j-1}) dt
     """
 
-    ### Implement this
-    # Same as above 
-
-    # function  u^{n+1}_{j}-u^{n}_{j} - u^{n+1}_j (u^{n+1}_{j+1} - 2 u^{n+1}_{j} -u^{n+1}_{j-1}) dt
-
-    # with corresponding jacobian and newton raphson
-
+    dx = xx[1] - xx[0]
+    return un - uo - un * (np.roll(un, -1) - 2 * un + np.roll(un, 1)) * dt / dx**2
 
 def jacobian_u(xx, un, dt, **kwargs):
     """
@@ -1403,8 +1388,6 @@ def jacobian_u(xx, un, dt, **kwargs):
         Spatial axis.
     un : `array`
         Function that depends on xx.
-    a : `float` and `array`
-        Either constant, or array which multiply the right hand side of the Burger's eq.
     dt : `int`
         Time interval
 
@@ -1413,6 +1396,19 @@ def jacobian_u(xx, un, dt, **kwargs):
     `array`
         Jacobian F_j'(u^{n+1}{k})
     """
+
+    dx = xx[1] - xx[0]
+
+    J = np.zeros((len(xx), len(xx)))
+
+    for i in range(len(xx)):
+        J[i, i] = 1 + dt * 2 * un[i] / dx**2
+        if i < len(xx) - 1:
+            J[i, i+1] = -dt * un[i] / dx**2
+        if i > 1:
+            J[i, i-1] = -dt * un[i] / dx**2
+
+    return J
 
 def Newton_Raphson_u(
     xx, hh, dt, nt, toll=1e-5, ncount=2, bnd_type="wrap", bnd_limits=[1, 1], **kwargs
@@ -1456,6 +1452,7 @@ def Newton_Raphson_u(
     countt : `array(int)`
         Number iterations for each timestep
     """
+    
     err = 1.0
     unnt = np.zeros((np.size(xx), nt))
     errt = np.zeros((nt))
