@@ -1052,7 +1052,7 @@ def ops_Lax_LH_Strang(
     bnd_limits : `list(int)`
         Array of two integer elements. The number of pixels that
         will need to be updated with the boundary information.
-        By default [0,1]
+#         By default [0,1]
 
     Returns
     -------
@@ -1073,28 +1073,21 @@ def ops_Lax_LH_Strang(
     for i in range(0, nt-1): 
 
         # Calculate timestep
-        # dt = cfl_adv_burger(a, xx) * 0.5 # XXX ADD 0.5 HERE
-        dt_a = cfl_adv_burger(a, xx) 
-        dt_b = cfl_adv_burger(b, xx) 
+        dt_a = cfl_adv_burger(a, xx) * cfl_cut
+        dt_b = cfl_adv_burger(b, xx) * cfl_cut
         dt = np.min([dt_a, dt_b]) * 0.5 # XXX ADD 0.5 HERE
-
         dx = xx[1] - xx[0]
 
-        # dt_u, rhs_u = step_adv_burgers(xx, unnt[:, i], a=a, cfl_cut=cfl_cut, ddx=ddx)
-        unnt[:, i] = 0.5 * (np.roll(wnnt[:, i], -1) + np.roll(wnnt[:, i], 1)) - ((a*dt) / (2*dx) * (np.roll(wnnt[:, i], -1) - np.roll(wnnt[:, i], 1)))#+ rhs_u * dt_u * 0.5 * 0.5 # XXX ADD 0.5 HERE
-
-        # dt_v, rhs_v = step_adv_burgers(xx, unn, a=b, cfl_cut=cfl_cut, ddx=ddx)
+        unnt[:, i] = 0.5 * (np.roll(wnnt[:, i], -1) + np.roll(wnnt[:, i], 1)) - ((a*dt) / (4*dx) * (np.roll(wnnt[:, i], -1) - np.roll(wnnt[:, i], 1)))
+        vnnt[:, i] = 0.5 * (np.roll(unnt[:, i], -1) + np.roll(unnt[:, i], 1)) - ((b*dt) / (2*dx) * (np.roll(unnt[:, i], -1) - np.roll(unnt[:, i], 1)))
 
         # Using the Hyman predictor-corrector scheme
         if i == 0:
-            vnnt[:, i], u_prev, dt_v = hyman(xx, unnt[:, i], dt, a=b, cfl_cut=cfl_cut, ddx=ddx)
+            vnnt[:, i], u_prev, dt_v = hyman(xx, unnt[:, i], dt/2, a=b, cfl_cut=cfl_cut, ddx=ddx,)
         else: 
-            vnnt[:, i], u_prev, dt_v = hyman(xx, unnt[:, i], dt, a=b, cfl_cut=cfl_cut, ddx=ddx, fold=u_prev, dtold=dt_v)
+            vnnt[:, i], u_prev, dt_v = hyman(xx, unnt[:, i], dt/2, a=b, cfl_cut=cfl_cut, ddx=ddx, fold=u_prev, dtold=dt_v)
         
-        # vnnt[:, i] = 0.5 * (np.roll(unnt[:, i], -1) + np.roll(unnt[:, i], 1)) - ((b*dt) / (2*dx) * (np.roll(unnt[:, i], -1) - np.roll(unnt[:, i], 1))) #+ rhs_v * dt_v * 0.5 # XXX ADD 0.5 HERE
-
-        # dt_w, rhs_w = step_adv_burgers(xx, vnnt[:, i], a=a, cfl_cut=cfl_cut, ddx=ddx)
-        wnnt[:, i] = 0.5 * (np.roll(vnnt[:, i], -1) + np.roll(vnnt[:, i], 1)) - ((a*dt) / (2*dx) * (np.roll(vnnt[:, i], -1) - np.roll(vnnt[:, i], 1)))#+ rhs_w * dt_w * 0.5 * 0.5# Half timestep # XXX ADD 0.5 HERE
+        wnnt[:, i] = 0.5 * (np.roll(vnnt[:, i], -1) + np.roll(vnnt[:, i], 1)) - ((a*dt) / (4*dx) * (np.roll(vnnt[:, i], -1) - np.roll(vnnt[:, i], 1)))
 
         u_next = wnnt[:, i]
         
@@ -1110,6 +1103,9 @@ def ops_Lax_LH_Strang(
         t[i+1] = t[i] + dt
 
     return t, wnnt
+
+
+
 
 def step_diff_burgers(xx, hh, a, ddx=lambda x, y: deriv_cent(x, y), **kwargs):
     r"""
