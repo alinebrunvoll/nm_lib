@@ -456,7 +456,7 @@ def evolv_Lax_adv_burgers(
 
     for i in range(0, nt-1): 
 
-        dt, rhs = step_adv_burgers(xx, unnt[:, i], a=a, cfl_cut=cfl_cut, ddx=ddx)
+        dt, rhs = step_adv_burgers(xx, unnt[:, i], a=a, cfl_cut=cfl_cut, ddx=ddx) 
 
         # Compute next timestep
         u_next = 0.5 * (np.roll(unnt[:, i], -1) + np.roll(unnt[:, i], 1)) + rhs * dt 
@@ -794,12 +794,15 @@ def ops_Lax_LL_Add(
         dt_v, rhs_v = step_adv_burgers(xx, unnt[:, i], b, cfl_cut=cfl_cut, ddx=ddx)
         
         # Calculate timestep
-        dt = np.min([dt_v, dt_u])
+        dt = np.min([dt_v, dt_u]) * 0.5 # XXX ADD 0.5 HERE
+
+        dx = xx[1] - xx[0]
 
         # Compute next timestep
-        unn = 0.5 * (np.roll(unnt[:, i], -1) + np.roll(unnt[:, i], 1)) + rhs_u * dt
-        vnn = 0.5 * (np.roll(unnt[:, i], -1) + np.roll(unnt[:, i], 1)) + rhs_v * dt
-        u_next = unn + vnn - unnt[:, i]
+        # XXX ADD RHS MANUALLY AND FIX IT ACCORDING TO WIKI
+        unn = 0.5 * (np.roll(unnt[:, i], -1) + np.roll(unnt[:, i], 1)) - ((a*dt) / (2*dx) * (np.roll(unnt[:, i], -1) - np.roll(unnt[:, i], 1))) #+ rhs_u * dt
+        vnn = 0.5 * (np.roll(unnt[:, i], -1) + np.roll(unnt[:, i], 1)) - ((b*dt) / (2*dx) * (np.roll(unnt[:, i], -1) - np.roll(unnt[:, i], 1))) #+ rhs_v * dt
+        u_next = unn + vnn - (0.5 * np.roll(unnt[:, i], -1) + 0.5 * np.roll(unnt[:, i], 1)) # unnt[:, i] # MADE STABLE by taking the surrounding half steps
         
         # Fix boundaries 
         if bnd_limits[1] > 0: 
@@ -872,22 +875,26 @@ def ops_Lax_LL_Lie(
     t = np.zeros((nt))
     unnt = np.zeros((len(xx), nt))
     unnt[:, 0] = hh
+    vnnt = np.zeros((len(xx), nt))
+    vnnt[:, 0] = hh
 
     for i in range(0, nt-1): 
 
         dt_u = cfl_adv_burger(a, xx) * cfl_cut
         dt_v = cfl_adv_burger(b, xx) * cfl_cut
-        dt = np.min([dt_u, dt_v])
-        
-        _, rhs_u = step_adv_burgers(xx, unnt[:, i], a=a, cfl_cut=cfl_cut, ddx=ddx)
+        dt = np.min([dt_u, dt_v]) * 0.5 # XXX ADD 0.5 HERE
 
-        unn = 0.5 * (np.roll(unnt[:, i], -1) + np.roll(unnt[:, i], 1)) + rhs_u * dt 
-
-        _, rhs_v = step_adv_burgers(xx, unn, a=b, cfl_cut=cfl_cut, ddx=ddx)
+        dx = xx[1] - xx[0]
         
-        vnn = 0.5 * (np.roll(unn, -1) + np.roll(unn, 1)) + rhs_v * dt
+        # _, rhs_u = step_adv_burgers(xx, unnt, a=a, cfl_cut=cfl_cut, ddx=ddx)
+
+        unnt[:, i] = 0.5 * (np.roll(vnnt[:, i], -1) + np.roll(vnnt[:, i], 1)) - ((a*dt) / (2*dx) * (np.roll(vnnt[:, i], -1) - np.roll(vnnt[:, i], 1))) # + rhs_u * dt 
+
+        # _, rhs_v = step_adv_burgers(xx, unnt[:, i], a=b, cfl_cut=cfl_cut, ddx=ddx)
+        
+        vnnt[:, i] = 0.5 * (np.roll(unnt[:, i], -1) + np.roll(unnt[:, i], 1)) - ((b*dt) / (2*dx) * (np.roll(unnt[:, i], -1) - np.roll(unnt[:, i], 1))) # + rhs_v * dt
                 
-        u_next = unn + vnn - unnt[:, i]
+        u_next = vnnt[:, i] #unn + vnn - unnt[:, i]
         
         # Fix boundaries 
         if bnd_limits[1] > 0: 
@@ -895,12 +902,12 @@ def ops_Lax_LL_Lie(
         else:
             u_next_temp = u_next[bnd_limits[0] :] # upw scheme
 
-        unnt[:, i+1] = np.pad(u_next_temp, bnd_limits, bnd_type) 
+        vnnt[:, i+1] = np.pad(u_next_temp, bnd_limits, bnd_type) 
 
         # Update time
         t[i+1] = t[i] + dt
 
-    return t, unnt
+    return t, vnnt
 
 def ops_Lax_LL_Strang(
     xx,
@@ -961,6 +968,10 @@ def ops_Lax_LL_Strang(
     t = np.zeros((nt))
     unnt = np.zeros((len(xx), nt))
     unnt[:, 0] = hh 
+    vnnt = np.zeros((len(xx), nt))
+    vnnt[:, 0] = hh
+    wnnt = np.zeros((len(xx), nt))
+    wnnt[:, 0] = hh
     
     for i in range(0, nt-1): 
 
@@ -968,21 +979,19 @@ def ops_Lax_LL_Strang(
         dt_u = cfl_adv_burger(a, xx) * cfl_cut
         dt_v = cfl_adv_burger(b, xx) * cfl_cut
 
-        dt = np.min([dt_u, dt_v])
+        dt = np.min([dt_u, dt_v]) * 0.5 # XXX ADD 0.5 HERE
+        dx = xx[1] - xx[0]
 
-        _, rhs_u = step_adv_burgers(xx, unnt[:, i], a, cfl_cut=cfl_cut, ddx=ddx)
         # Advance half a timestep:
-        u_half = 0.5 * (np.roll(unnt[:, i], -1) + np.roll(unnt[:, i], 1)) + rhs_u * dt * 0.5
+        unnt[:, i] = 0.5 * (np.roll(wnnt[:, i], -1) + np.roll(wnnt[:, i], 1)) - ((a*dt) / (4*dx) * (np.roll(wnnt[:, i], -1) - np.roll(wnnt[:, i], 1)))#+ rhs_u * dt * 0.5 # XXX w here
         
-        _, rhs_v = step_adv_burgers(xx, u_half[i], b, cfl_cut=cfl_cut, ddx=ddx)
         # Advance half a timestep:
-        v_half = 0.5 * (np.roll(u_half, -1) + np.roll(u_half, 1)) + rhs_v * dt * 0.5
+        vnnt[:, i] = 0.5 * (np.roll(unnt[:, i], -1) + np.roll(unnt[:, i], 1)) - ((b*dt) / (2*dx) * (np.roll(unnt[:, i], -1) - np.roll(unnt[:, i], 1))) #+ rhs_v * dt * 0.5 # XXX u at t+1/2
 
-        dt_w, rhs_w = step_adv_burgers(xx, v_half[i], a, cfl_cut=cfl_cut, ddx=ddx)
         # Advance half a timestep:
-        w_half = 0.5 * (np.roll(v_half, -1) + np.roll(v_half, 1)) + rhs_w * dt * 0.5
+        wnnt[:, i] = 0.5 * (np.roll(vnnt[:, i], -1) + np.roll(vnnt[:, i], 1)) - ((a*dt) / (4*dx) * (np.roll(vnnt[:, i], -1) - np.roll(vnnt[:, i], 1)))#+ rhs_w * dt * 0.5 # XXX v here
 
-        u_next = w_half
+        u_next = wnnt[:, i]
         
         # Fix boundaries 
         if bnd_limits[1] > 0: 
@@ -990,12 +999,11 @@ def ops_Lax_LL_Strang(
         else:
             u_next_temp = u_next[bnd_limits[0] :] # upw scheme
 
-        unnt[:, i+1] = np.pad(u_next_temp, bnd_limits, bnd_type) 
-
+        wnnt[:, i+1] = np.pad(u_next_temp, bnd_limits, bnd_type) 
         # Update time
-        t[i+1] = t[i] + dt
+        t[i+1] = t[i] + dt 
 
-    return t, unnt
+    return t, wnnt # return w
 
 def ops_Lax_LH_Strang(
     xx,
@@ -1057,28 +1065,38 @@ def ops_Lax_LH_Strang(
     t = np.zeros((nt))
     unnt = np.zeros((len(xx), nt))
     unnt[:, 0] = hh
+    vnnt = np.zeros((len(xx), nt))
+    vnnt[:, 0] = hh
+    wnnt = np.zeros((len(xx), nt))
+    wnnt[:, 0] = hh
 
     for i in range(0, nt-1): 
 
         # Calculate timestep
-        dt = cfl_adv_burger(a, xx)
+        # dt = cfl_adv_burger(a, xx) * 0.5 # XXX ADD 0.5 HERE
+        dt_a = cfl_adv_burger(a, xx) 
+        dt_b = cfl_adv_burger(b, xx) 
+        dt = np.min([dt_a, dt_b]) * 0.5 # XXX ADD 0.5 HERE
 
-        dt_u, rhs_u = step_adv_burgers(xx, unnt[:, i], a=a, cfl_cut=cfl_cut, ddx=ddx)
-        unn = 0.5 * (np.roll(unnt[:, i], -1) + np.roll(unnt[:, i], 1)) + rhs_u * dt_u * 0.5
+        dx = xx[1] - xx[0]
 
-        dt_v, rhs_v = step_adv_burgers(xx, unn, a=b, cfl_cut=cfl_cut, ddx=ddx)
+        # dt_u, rhs_u = step_adv_burgers(xx, unnt[:, i], a=a, cfl_cut=cfl_cut, ddx=ddx)
+        unnt[:, i] = 0.5 * (np.roll(wnnt[:, i], -1) + np.roll(wnnt[:, i], 1)) - ((a*dt) / (2*dx) * (np.roll(wnnt[:, i], -1) - np.roll(wnnt[:, i], 1)))#+ rhs_u * dt_u * 0.5 * 0.5 # XXX ADD 0.5 HERE
+
+        # dt_v, rhs_v = step_adv_burgers(xx, unn, a=b, cfl_cut=cfl_cut, ddx=ddx)
+
         # Using the Hyman predictor-corrector scheme
         if i == 0:
-            unn, u_prev, dt_v = hyman(xx, unn, dt, a=b, cfl_cut=cfl_cut, ddx=ddx)
+            vnnt[:, i], u_prev, dt_v = hyman(xx, unnt[:, i], dt, a=b, cfl_cut=cfl_cut, ddx=ddx)
         else: 
-            unn, u_prev, dt_v = hyman(xx, unn, dt, a=b, cfl_cut=cfl_cut, ddx=ddx, fold=u_prev, dtold=dt_v)
+            vnnt[:, i], u_prev, dt_v = hyman(xx, unnt[:, i], dt, a=b, cfl_cut=cfl_cut, ddx=ddx, fold=u_prev, dtold=dt_v)
         
-        vnn = 0.5 * (np.roll(unn, -1) + np.roll(unn, 1)) + rhs_v * dt_v
+        # vnnt[:, i] = 0.5 * (np.roll(unnt[:, i], -1) + np.roll(unnt[:, i], 1)) - ((b*dt) / (2*dx) * (np.roll(unnt[:, i], -1) - np.roll(unnt[:, i], 1))) #+ rhs_v * dt_v * 0.5 # XXX ADD 0.5 HERE
 
-        dt_w, rhs_w = step_adv_burgers(xx, vnn, a=a, cfl_cut=cfl_cut, ddx=ddx)
-        wnn = 0.5 * (np.roll(vnn, -1) + np.roll(vnn, 1)) + rhs_w * dt_w * 0.5 # Half timestep
+        # dt_w, rhs_w = step_adv_burgers(xx, vnnt[:, i], a=a, cfl_cut=cfl_cut, ddx=ddx)
+        wnnt[:, i] = 0.5 * (np.roll(vnnt[:, i], -1) + np.roll(vnnt[:, i], 1)) - ((a*dt) / (2*dx) * (np.roll(vnnt[:, i], -1) - np.roll(vnnt[:, i], 1)))#+ rhs_w * dt_w * 0.5 * 0.5# Half timestep # XXX ADD 0.5 HERE
 
-        u_next = wnn
+        u_next = wnnt[:, i]
         
         # Fix boundaries 
         if bnd_limits[1] > 0: 
@@ -1086,12 +1104,12 @@ def ops_Lax_LH_Strang(
         else:
             u_next_temp = u_next[bnd_limits[0] :] # upw scheme
 
-        unnt[:, i+1] = np.pad(u_next_temp, bnd_limits, bnd_type) 
+        wnnt[:, i+1] = np.pad(u_next_temp, bnd_limits, bnd_type) 
 
         # Update time
         t[i+1] = t[i] + dt
 
-    return t, unnt
+    return t, wnnt
 
 def step_diff_burgers(xx, hh, a, ddx=lambda x, y: deriv_cent(x, y), **kwargs):
     r"""
